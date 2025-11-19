@@ -7,8 +7,6 @@ import {
   Video as VideoIcon, Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-// Supabase Client'ı CDN'den çekiyoruz (npm install gerektirmez)
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // --- SUPABASE AYARLARI ---
 // 👇👇👇 BURAYI KENDİ SUPABASE BİLGİLERİNLE DOLDUR 👇👇👇
@@ -16,22 +14,11 @@ const supabaseUrl = "https://macgaodeesbzxufdhzja.supabase.co"; // Örn: https:/
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hY2dhb2RlZXNienh1ZmRoemphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTc3NTksImV4cCI6MjA3OTEzMzc1OX0.RRZcBuO7QrgW3z5PHgjZNPf_vEPaIvjuVW9pzW8w6jE"; // Örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... 
 // 👆👆👆👆👆👆
 
-let supabase;
+// Global değişken (Script yüklendikten sonra dolacak)
+let supabase = null;
 let configError = false;
 
-try {
-    if (!supabaseUrl || supabaseUrl.includes("BURAYA")) {
-        configError = true;
-    } else {
-        supabase = createClient(supabaseUrl, supabaseKey);
-    }
-} catch (e) {
-    console.error("Supabase hatası", e);
-    configError = true;
-}
-
 // --- LOGLAMA VE KİMLİK SİSTEMİ ---
-
 const fetchUserIP = async () => {
     try {
         const res = await fetch('https://api.ipify.org?format=json');
@@ -43,6 +30,7 @@ const fetchUserIP = async () => {
 };
 
 const logSystem = async (action, eventId = null, extraDetails = {}) => {
+    // Supabase hazır değilse veya config hatası varsa loglama
     if (configError || !supabase) return;
     
     const ip = await fetchUserIP();
@@ -146,16 +134,33 @@ export default function EventGlassApp() {
   const [view, setView] = useState('landing'); 
   const [theme, setTheme] = useState('dark');
   const [currentEventId, setCurrentEventId] = useState(null);
+  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
   
   useEffect(() => {
     const init = async () => {
-      // Siteye giriş logu
-      await logSystem('SITE_ENTER');
+      // 1. Supabase JS Yükle (CDN ile)
+      if (!window.supabase) {
+        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+      }
 
+      // 2. Supabase Başlat
+      if (window.supabase && !supabase) {
+          if (!supabaseUrl || supabaseUrl.includes("BURAYA")) {
+              configError = true;
+          } else {
+              supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+              setIsSupabaseReady(true);
+              // Siteye giriş logu
+              await logSystem('SITE_ENTER');
+          }
+      } else if (supabase) {
+          setIsSupabaseReady(true);
+      }
+
+      // 3. JSZip Yükle
       if (!window.JSZip) {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-        document.head.appendChild(script);
+        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'); } 
+        catch (e) { console.warn("JSZip failed."); }
       }
       
       const params = new URLSearchParams(window.location.search);
@@ -198,7 +203,7 @@ export default function EventGlassApp() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
         <Database size={48} className="text-red-500 mb-4" />
         <h1 className="text-2xl font-bold mb-2">Sistem Ayarları Eksik</h1>
-        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki <code>supabaseUrl</code> ve <code>supabaseKey</code> alanlarını doldurun.</p>
+        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki bağlantı anahtarlarını doldurun.</p>
       </div>
     );
   }
@@ -230,7 +235,7 @@ export default function EventGlassApp() {
         <AnimatePresence mode="wait">
           {view === 'landing' && <LandingPage key="landing" onCreateClick={goToCreate} onJoinClick={goToEvent} />}
           {view === 'create' && <CreateEventPage key="create" onCancel={goHome} onCreated={goToEvent} />}
-          {view === 'event' && currentEventId && <EventDetailPage key="event" eventId={currentEventId} onInvalidId={goHome} />}
+          {view === 'event' && currentEventId && <EventDetailPage key="event" eventId={currentEventId} onInvalidId={goHome} isSupabaseReady={isSupabaseReady} />}
         </AnimatePresence>
       </main>
       
@@ -300,6 +305,7 @@ function CreateEventPage({ onCancel, onCreated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!supabase) return alert("Sistem henüz hazır değil, lütfen bekleyin.");
     setLoading(true);
     try {
       const eventId = "EVT-" + Math.floor(1000 + Math.random() * 9000) + "-" + Math.random().toString(36).substring(2, 5).toUpperCase();
@@ -385,7 +391,7 @@ function CreateEventPage({ onCancel, onCreated }) {
   );
 }
 
-function EventDetailPage({ eventId, onInvalidId }) {
+function EventDetailPage({ eventId, onInvalidId, isSupabaseReady }) {
   const [event, setEvent] = useState(null);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -420,7 +426,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
 
   // DATA FETCHING (Supabase)
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !isSupabaseReady) return;
     setLoading(true);
     
     const fetchEvent = async () => {
@@ -434,11 +440,11 @@ function EventDetailPage({ eventId, onInvalidId }) {
         setLoading(false);
     };
     fetchEvent();
-  }, [eventId]);
+  }, [eventId, isSupabaseReady]);
 
   // REALTIME SUBSCRIPTION (OTOMATİK YENİLEME İÇİN)
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || !isSupabaseReady) return;
     
     // Initial Fetch
     supabase.from('photos').select('*').eq('event_id', eventId).order('created_at', { ascending: false })
@@ -458,7 +464,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
     return () => {
         supabase.removeChannel(subscription);
     };
-  }, [eventId]);
+  }, [eventId, isSupabaseReady]);
 
   const handleFileUpload = async (files) => {
     setUploading(true);
