@@ -11,7 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 const githubConfig = {
   token: "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",
   username: "yalinalpagan",
-  repo: "EventGlassPhotos", // BURASI EventGlassPhotos OLDU
+  repo: "EventGlassPhotos", 
   branch: "main"
 };
 
@@ -403,7 +403,7 @@ function CreateEventPage({ onCancel, onCreated }) {
                 </div>
               ))}
               {tab === 'colors' && SOLID_COLORS.map((color) => (
-                <div key={color} onClick={() => setFormData({...formData, cover: color})} className={`relative aspect-video rounded-xl cursor-pointer overflow-hidden transition-all ${formData.cover === color ? 'ring-4 ring-blue-500 scale-105 z-10' : 'hover:opacity-80'}`} style={ backgroundColor: color }>
+                <div key={color} onClick={() => setFormData({...formData, cover: color})} className={`relative aspect-video rounded-xl cursor-pointer overflow-hidden transition-all ${formData.cover === color ? 'ring-4 ring-blue-500 scale-105 z-10' : 'hover:opacity-80'}`} style={{ backgroundColor: color }}>
                     {formData.cover === color && <div className="absolute inset-0 flex items-center justify-center"><div className="bg-white rounded-full p-1"><Check size={14} className="text-blue-500" /></div></div>}
                 </div>
               ))}
