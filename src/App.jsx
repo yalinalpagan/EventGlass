@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Camera, Plus, Upload, Moon, Sun, Share2, X, 
   Image as ImageIcon, ChevronRight, ChevronLeft,
-  Copy, Check, Loader2, Download, ArrowRight, Sparkles, Link as LinkIcon,
-  AlertTriangle, Lock, FileArchive, Smartphone, Palette, RefreshCw, Database
+  Copy, Check, Loader2, Download, Sparkles, Link as LinkIcon,
+  AlertTriangle, Lock, FileArchive, Smartphone, Palette, RefreshCw, Database,
+  Video as VideoIcon, Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@supabase/supabase-js';
 
-// --- SUPABASE CONFIGURATION ---
-// 👇👇👇 BURAYI KENDİ SUPABASE BİLGİLERİNLE DOLDUR 👇👇👇
+// --- SUPABASE AYARLARI ---
+// Buraya kendi proje bilgilerini gir.
 const supabaseUrl = "https://macgaodeesbzxufdhzja.supabase.co"; // Örn: https://xyz.supabase.co
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hY2dhb2RlZXNienh1ZmRoemphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTc3NTksImV4cCI6MjA3OTEzMzc1OX0.RRZcBuO7QrgW3z5PHgjZNPf_vEPaIvjuVW9pzW8w6jE"; // Örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-// 👆👆👆👆👆👆
+
 
 let supabase;
 let configError = false;
@@ -24,22 +25,56 @@ try {
         supabase = createClient(supabaseUrl, supabaseKey);
     }
 } catch (e) {
-    console.error("Supabase init error", e);
+    console.error("Supabase hatası", e);
     configError = true;
 }
 
-// --- USER ID ---
+// --- LOGLAMA VE KİMLİK SİSTEMİ ---
+
+// Kullanıcının IP adresini almak için basit bir servis
+const fetchUserIP = async () => {
+    try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const data = await res.json();
+        return data.ip;
+    } catch (error) {
+        return "IP_Bulunamadi";
+    }
+};
+
+// Detaylı Loglama Fonksiyonu
+const logSystem = async (action, eventId = null, extraDetails = {}) => {
+    if (configError) return;
+    
+    const ip = await fetchUserIP();
+    const userAgent = navigator.userAgent;
+    
+    const logData = {
+        action_type: action,
+        ip_address: ip,
+        user_agent: userAgent,
+        event_id: eventId,
+        details: extraDetails
+    };
+
+    console.log("LOG:", logData); // Konsolda da görelim
+
+    // Supabase'e log at
+    await supabase.from('logs').insert(logData);
+};
+
+// --- USER ID (Cihazda Kalıcı Kimlik) ---
 const getUserId = () => {
     let uid = localStorage.getItem('eg_uid');
     if(!uid) {
-        uid = 'user_' + Math.random().toString(36).substr(2, 9);
+        uid = 'visitor_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('eg_uid', uid);
     }
     return uid;
 };
 const currentUser = getUserId();
 
-// --- ASSETS ---
+// --- SABİTLER ---
 const IMAGE_OPTIONS = [
   "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1200&q=80", 
   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&q=80", 
@@ -56,7 +91,23 @@ const GRADIENT_OPTIONS = [
 
 const SOLID_COLORS = ["#1e293b", "#b91c1c", "#0f766e", "#4338ca", "#be185d", "#000000"];
 
-// --- UI COMPONENTS ---
+// --- YARDIMCI FONKSİYONLAR ---
+const generateEventId = () => {
+  const random4 = Math.floor(1000 + Math.random() * 9000);
+  const random3 = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `EVT-${random4}-${random3}`;
+};
+
+const loadScript = (src) => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const script = document.createElement('script');
+    script.src = src; script.onload = resolve; script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+// --- UI BİLEŞENLERİ ---
 const GlassCard = ({ children, className = "", onClick }) => (
   <div onClick={onClick} className={`relative overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/40 dark:border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] rounded-3xl transition-all duration-300 ${className}`}>
     {children}
@@ -77,17 +128,18 @@ const Button = ({ children, variant = 'primary', className = "", onClick, disabl
   );
 };
 
-const CopyButton = ({ text, label, icon: Icon, variant = "secondary", className }) => {
+const CopyButton = ({ text, label, icon: Icon, variant = "secondary", className, onCopyAction }) => {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
     navigator.clipboard.writeText(text);
     setCopied(true);
+    if(onCopyAction) onCopyAction();
     setTimeout(() => setCopied(false), 2000);
   };
   return <Button variant={variant} className={className} icon={copied ? Check : Icon} onClick={handleCopy}>{copied ? 'Kopyalandı!' : label}</Button>;
 };
 
-// --- MAIN APP ---
+// --- ANA UYGULAMA ---
 export default function EventGlassApp() {
   const [view, setView] = useState('landing'); 
   const [theme, setTheme] = useState('dark');
@@ -95,6 +147,9 @@ export default function EventGlassApp() {
   
   useEffect(() => {
     const init = async () => {
+      // Siteye giriş logu
+      await logSystem('SITE_ENTER');
+
       if (!window.JSZip) {
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
@@ -140,9 +195,8 @@ export default function EventGlassApp() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
         <Database size={48} className="text-red-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Supabase Ayarları Eksik</h1>
-        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki <code>supabaseUrl</code> ve <code>supabaseKey</code> alanlarını doldurun.</p>
-        <p className="text-xs text-slate-600">Projenizdeki SQL Tablolarını oluşturduğunuzdan emin olun.</p>
+        <h1 className="text-2xl font-bold mb-2">Sistem Ayarları Eksik</h1>
+        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki bağlantı anahtarlarını doldurun.</p>
       </div>
     );
   }
@@ -185,11 +239,17 @@ export default function EventGlassApp() {
   );
 }
 
-// --- SUB COMPONENTS ---
+// --- ALT BİLEŞENLER ---
 
 function LandingPage({ onCreateClick, onJoinClick }) {
   const [joinId, setJoinId] = useState('');
-  const handleJoin = (e) => { e.preventDefault(); if (joinId.trim().length > 3) onJoinClick(joinId.trim()); };
+  const handleJoin = (e) => { 
+    e.preventDefault(); 
+    if (joinId.trim().length > 3) {
+        logSystem('JOIN_EVENT_ATTEMPT', joinId.trim());
+        onJoinClick(joinId.trim()); 
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center flex-grow text-center gap-16">
@@ -202,7 +262,7 @@ function LandingPage({ onCreateClick, onJoinClick }) {
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 animate-gradient-x">Sonsuzlaştırın</span>
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed font-light">
-          Etkinlikleriniz için Supabase destekli, yeni nesil fotoğraf paylaşım platformu.
+          Etkinlikleriniz için yeni nesil, sınırsız fotoğraf ve video paylaşım platformu.
         </motion.p>
       </div>
 
@@ -252,6 +312,9 @@ function CreateEventPage({ onCancel, onCreated }) {
 
       if (error) throw error;
 
+      // Logla
+      await logSystem('CREATE_EVENT', eventId, { title: formData.name });
+
       onCreated(eventId);
     } catch (error) {
       console.error("Error:", error);
@@ -271,7 +334,7 @@ function CreateEventPage({ onCancel, onCreated }) {
         <div className="flex justify-between items-start">
             <h2 className="text-4xl font-bold mb-2">Yeni Etkinlik</h2>
         </div>
-        <p className="text-slate-500 dark:text-slate-400 mb-8">Supabase veritabanı üzerinde alan oluşturun.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">Bulut tabanlı anı alanı oluşturun.</p>
         <form onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-6">
             <div>
@@ -326,38 +389,40 @@ function EventDetailPage({ eventId, onInvalidId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [selectedMedia, setSelectedMedia] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   
-  const currentIndex = selectedPhoto ? photos.findIndex(p => p.id === selectedPhoto.id) : -1;
+  const currentIndex = selectedMedia ? photos.findIndex(p => p.id === selectedMedia.id) : -1;
   const shareUrl = `${window.location.origin}${window.location.pathname}?event=${eventId}`;
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (!selectedPhoto) return;
+      if (!selectedMedia) return;
       if (e.key === 'ArrowRight') handleNext();
       if (e.key === 'ArrowLeft') handlePrev();
-      if (e.key === 'Escape') setSelectedPhoto(null);
+      if (e.key === 'Escape') setSelectedMedia(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedPhoto, photos]);
+  }, [selectedMedia, photos]);
 
   const handleNext = () => {
-      const idx = photos.findIndex(p => p.id === selectedPhoto.id);
-      if (idx < photos.length - 1) setSelectedPhoto(photos[idx + 1]);
+      const idx = photos.findIndex(p => p.id === selectedMedia.id);
+      if (idx < photos.length - 1) setSelectedMedia(photos[idx + 1]);
   };
   const handlePrev = () => {
-      const idx = photos.findIndex(p => p.id === selectedPhoto.id);
-      if (idx > 0) setSelectedPhoto(photos[idx - 1]);
+      const idx = photos.findIndex(p => p.id === selectedMedia.id);
+      if (idx > 0) setSelectedMedia(photos[idx - 1]);
   };
 
-  // FETCH DATA (Supabase)
+  // DATA FETCHING (Supabase)
   useEffect(() => {
     if (!eventId) return;
     setLoading(true);
+    
     const fetchEvent = async () => {
+        logSystem('VIEW_EVENT', eventId);
         const { data, error } = await supabase.from('events').select('*').eq('id', eventId).single();
         if (error || !data) {
             setError('not_found');
@@ -369,7 +434,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
     fetchEvent();
   }, [eventId]);
 
-  // REALTIME SUBSCRIPTION
+  // REALTIME SUBSCRIPTION (OTOMATİK YENİLEME İÇİN)
   useEffect(() => {
     if (!eventId) return;
     
@@ -379,10 +444,11 @@ function EventDetailPage({ eventId, onInvalidId }) {
           if (data) setPhotos(data);
       });
 
-    // Subscribe
+    // Subscribe to changes (INSERT)
     const subscription = supabase
-      .channel('public:photos')
+      .channel(`event-${eventId}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'photos', filter: `event_id=eq.${eventId}` }, (payload) => {
+        // Yeni fotoğraf geldiğinde listeye ekle
         setPhotos(prev => [payload.new, ...prev]);
       })
       .subscribe();
@@ -396,7 +462,9 @@ function EventDetailPage({ eventId, onInvalidId }) {
     setUploading(true);
     try {
       const promises = Array.from(files).map(async (file) => {
-          const fileName = `${eventId}/${Date.now()}_${Math.random().toString(36).substring(7)}`;
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${eventId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const isVideo = file.type.startsWith('video/');
           
           // Upload to Supabase Storage
           const { data: uploadData, error: uploadError } = await supabase.storage.from('event-photos').upload(fileName, file);
@@ -410,9 +478,13 @@ function EventDetailPage({ eventId, onInvalidId }) {
              event_id: eventId,
              url: publicUrl,
              name: file.name,
+             type: isVideo ? 'video' : 'image',
              uploader_id: currentUser
           });
           if(dbError) throw dbError;
+
+          // Log Upload
+          await logSystem('UPLOAD_MEDIA', eventId, { fileName: file.name, type: isVideo ? 'video' : 'image' });
       });
       await Promise.all(promises);
     } catch (error) {
@@ -423,20 +495,19 @@ function EventDetailPage({ eventId, onInvalidId }) {
     }
   };
 
-  const handleDownloadSingle = async (e, photo) => {
+  const handleDownloadSingle = async (e, media) => {
     e.stopPropagation(); e.preventDefault();
-    try {
-      const response = await fetch(photo.url);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url; link.download = `yalinalpagan-${photo.id}.jpg`;
-      document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    } catch (err) { console.error("DL Error", err); }
+    await logSystem('DOWNLOAD_SINGLE', eventId, { mediaId: media.id });
+    // ... (Mevcut indirme mantığı)
+    const link = document.createElement('a');
+    link.href = media.url;
+    link.download = `eventglass-${media.id}.${media.name?.split('.').pop() || 'jpg'}`;
+    link.click();
   };
 
   const handleDownloadAll = async () => {
     if (!window.JSZip) { alert("ZIP kütüphanesi eksik."); return; }
+    await logSystem('DOWNLOAD_ALL', eventId);
     setIsDownloadingAll(true);
     const zip = new window.JSZip();
     const folder = zip.folder(`Yalin-Event-${eventId}`);
@@ -444,7 +515,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
       await Promise.all(photos.map(async (p, i) => {
           const res = await fetch(p.url);
           const blob = await res.blob();
-          folder.file(`photo-${i+1}.jpg`, blob);
+          folder.file(`media-${i+1}.${p.name?.split('.').pop() || 'jpg'}`, blob);
       }));
       const content = await zip.generateAsync({ type: "blob" });
       const link = document.createElement('a');
@@ -474,6 +545,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
 
   return (
     <div className="space-y-8 pb-20 relative mt-4">
+      {/* ... HERO SECTION (AYNI KALDI) ... */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative h-[45vh] rounded-[2.5rem] overflow-hidden shadow-2xl group" style={isColor ? { backgroundColor: event.coverUrl } : {}}>
         {isImage && <img src={event?.coverUrl} alt="Cover" className="absolute inset-0 w-full h-full object-cover transition-transform duration-[10s] ease-out group-hover:scale-105" />}
         {isGradient && <div className={`absolute inset-0 w-full h-full ${gradientClass}`} />}
@@ -488,20 +560,26 @@ function EventDetailPage({ eventId, onInvalidId }) {
                {event?.description && <p className="text-xl text-white/80 max-w-2xl font-light">{event.description}</p>}
             </div>
             <div className="flex gap-3">
-               <Button variant="glass" icon={Share2} onClick={() => setShowShareModal(true)}>Davet Et</Button>
+               <Button variant="glass" icon={Share2} onClick={() => {
+                 logSystem('OPEN_SHARE', eventId);
+                 setShowShareModal(true);
+               }}>Davet Et</Button>
             </div>
           </div>
         </div>
       </motion.div>
 
+      {/* UPLOAD SECTION */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
         <GlassCard className="p-0 overflow-hidden border-dashed border-2 border-blue-500/20 hover:border-blue-500/50 transition-all group">
           <label className="flex flex-col items-center justify-center py-16 cursor-pointer relative">
              <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/5 transition-colors" />
-             <div className="p-6 rounded-full bg-blue-500/10 text-blue-600 mb-4 group-hover:scale-110 transition-transform">{uploading ? <Loader2 className="animate-spin" size={40} /> : <Upload size={40} />}</div>
-             <h3 className="text-2xl font-bold">Fotoğraf Ekle</h3>
-             <p className="text-slate-500 mt-2">Supabase Storage'a kaydetmek için tıklayın.</p>
-             <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e.target.files)} disabled={uploading} />
+             <div className="p-6 rounded-full bg-blue-500/10 text-blue-600 mb-4 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300">
+                {uploading ? <Loader2 className="animate-spin" size={40} /> : <Upload size={40} />}
+             </div>
+             <h3 className="text-2xl font-bold">Medya Ekle</h3>
+             <p className="text-slate-500 mt-2">Fotoğraf veya Video yüklemek için tıklayın.</p>
+             <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e.target.files)} disabled={uploading} />
           </label>
         </GlassCard>
       </motion.div>
@@ -515,14 +593,21 @@ function EventDetailPage({ eventId, onInvalidId }) {
         {photos.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 text-slate-400 gap-6 border border-dashed border-slate-200 dark:border-slate-800 rounded-3xl bg-slate-50/50 dark:bg-white/5">
             <div className="p-6 rounded-full bg-slate-100 dark:bg-white/5"><ImageIcon size={48} className="opacity-30" /></div>
-            <p className="text-lg font-medium">Henüz fotoğraf yok.</p>
+            <p className="text-lg font-medium">Henüz medya yok.</p>
           </div>
         ) : (
           <motion.div layout className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <AnimatePresence>
               {photos.map((photo) => (
-                <motion.div layout initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} key={photo.id} onClick={() => setSelectedPhoto(photo)} className="aspect-square rounded-2xl overflow-hidden cursor-zoom-in relative group bg-slate-200 dark:bg-slate-800 shadow-sm hover:shadow-xl transition-all">
-                  <img src={photo.url} alt="Memory" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                <motion.div layout initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} key={photo.id} onClick={() => setSelectedMedia(photo)} className="aspect-square rounded-2xl overflow-hidden cursor-zoom-in relative group bg-slate-200 dark:bg-slate-800 shadow-sm hover:shadow-xl transition-all">
+                  {photo.type === 'video' ? (
+                     <div className="w-full h-full relative flex items-center justify-center bg-black">
+                        <video src={photo.url} className="w-full h-full object-cover opacity-80" muted />
+                        <div className="absolute inset-0 flex items-center justify-center"><div className="p-3 bg-white/20 backdrop-blur-md rounded-full"><Play size={24} fill="white" className="text-white" /></div></div>
+                     </div>
+                  ) : (
+                     <img src={photo.url} alt="Memory" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
+                  )}
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -530,6 +615,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
         )}
       </div>
 
+      {/* SHARE MODAL (LOG EKLENDİ) */}
       <AnimatePresence>
         {showShareModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] w-screen h-screen bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
@@ -543,8 +629,8 @@ function EventDetailPage({ eventId, onInvalidId }) {
                   <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(shareUrl)}`} alt="Event QR" className="w-48 h-48 mix-blend-multiply" />
                 </div>
                 <div className="flex gap-3 w-full">
-                   <CopyButton text={eventId} label="ID" icon={Copy} className="flex-1" />
-                   <CopyButton text={shareUrl} label="Link" icon={LinkIcon} variant="primary" className="flex-1" />
+                   <CopyButton text={eventId} label="ID" icon={Copy} className="flex-1" onCopyAction={() => logSystem('COPY_ID', eventId)} />
+                   <CopyButton text={shareUrl} label="Link" icon={LinkIcon} variant="primary" className="flex-1" onCopyAction={() => logSystem('COPY_LINK', eventId)} />
                 </div>
               </div>
             </motion.div>
@@ -552,16 +638,23 @@ function EventDetailPage({ eventId, onInvalidId }) {
         )}
       </AnimatePresence>
 
+      {/* LIGHTBOX (VIDEO DESTEKLİ) */}
       <AnimatePresence>
-        {selectedPhoto && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[99999] bg-black flex flex-col items-center justify-center overflow-hidden" onClick={() => setSelectedPhoto(null)}>
+        {selectedMedia && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[99999] bg-black flex flex-col items-center justify-center overflow-hidden" onClick={() => setSelectedMedia(null)}>
             <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-50 bg-gradient-to-b from-black/80 to-transparent">
-               <button onClick={() => setSelectedPhoto(null)} className="p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"><X size={24} /></button>
-               <button onClick={(e) => handleDownloadSingle(e, selectedPhoto)} className="flex items-center gap-2 px-5 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-lg"><Download size={20} /> <span className="hidden md:inline">İndir</span></button>
+               <button onClick={() => setSelectedMedia(null)} className="p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"><X size={24} /></button>
+               <button onClick={(e) => handleDownloadSingle(e, selectedMedia)} className="flex items-center gap-2 px-5 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white transition-colors shadow-lg"><Download size={20} /> <span className="hidden md:inline">İndir</span></button>
             </div>
             <div className="relative w-full h-full flex items-center justify-center px-4">
               {currentIndex > 0 && <button onClick={(e) => {e.stopPropagation(); handlePrev()}} className="absolute left-4 z-50 p-4 rounded-full bg-white/10 text-white backdrop-blur-md hover:scale-110 transition-all"><ChevronLeft size={32} /></button>}
-              <motion.img key={selectedPhoto.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} src={selectedPhoto.url} alt="Full view" className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} />
+              
+              {selectedMedia.type === 'video' ? (
+                  <video src={selectedMedia.url} controls autoPlay className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} />
+              ) : (
+                  <motion.img key={selectedMedia.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} src={selectedMedia.url} alt="Full view" className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} />
+              )}
+
               {currentIndex < photos.length - 1 && <button onClick={(e) => {e.stopPropagation(); handleNext()}} className="absolute right-4 z-50 p-4 rounded-full bg-white/10 text-white backdrop-blur-md hover:scale-110 transition-all"><ChevronRight size={32} /></button>}
             </div>
             <div className="absolute bottom-8 text-white/20 text-xs font-black tracking-[1em]">YALIN</div>
