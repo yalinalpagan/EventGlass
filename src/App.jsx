@@ -29,6 +29,17 @@ const fetchUserIP = async () => {
     }
 };
 
+// --- USER ID ---
+const getUserId = () => {
+    let uid = localStorage.getItem('eg_uid');
+    if(!uid) {
+        uid = 'visitor_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('eg_uid', uid);
+    }
+    return uid;
+};
+const currentUser = getUserId();
+
 const logSystem = async (action, eventId = null, extraDetails = {}) => {
     // Supabase hazır değilse veya config hatası varsa loglama
     if (configError || !supabase) return;
@@ -53,17 +64,6 @@ const logSystem = async (action, eventId = null, extraDetails = {}) => {
         console.warn("Loglama hatası:", e);
     }
 };
-
-// --- USER ID ---
-const getUserId = () => {
-    let uid = localStorage.getItem('eg_uid');
-    if(!uid) {
-        uid = 'visitor_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('eg_uid', uid);
-    }
-    return uid;
-};
-const currentUser = getUserId();
 
 // --- SABİTLER ---
 const IMAGE_OPTIONS = [
