@@ -7,15 +7,35 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- GITHUB CONFIGURATION ---
-const githubConfig = {
-  token: "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",
-  username: "yalinalpagan",
-  repo: "EventGlassPhotos", 
-  branch: "main"
+// --- FIREBASE SETUP ---
+import { initializeApp } from "firebase/app";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
+
+// ⚠️ BURAYI DOLDURMAYI UNUTMA!
+// Firebase Konsolu -> Project Settings -> General -> Your apps kısmından alabilirsin.
+// Bu anahtarlar halka açık çalışır, GitHub iptal etmez.
+const firebaseConfig = {
+  apiKey: "AIzaSyDpWlwebcwGt2_wD7BEX2m6xyMTZ2_x46w",
+  authDomain: "yalin-eventglass.firebaseapp.com",
+  projectId: "yalin-eventglass",
+  storageBucket: "yalin-eventglass.firebasestorage.app",
+  messagingSenderId: "543450127696",
+  appId: "1:543450127696:web:0d343dd09036613fdbe055"
 };
 
-// --- APP ID & USER ---
+// Firebase Başlatma
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (error) {
+  console.error("Firebase başlatılamadı:", error);
+}
+
+// --- APP ID ---
+const appIdStr = 'event-glass-production'; 
 const generateUserId = () => {
   let uid = localStorage.getItem('eventglass_uid');
   if (!uid) {
@@ -43,83 +63,11 @@ const GRADIENT_OPTIONS = [
 
 const SOLID_COLORS = ["#1e293b", "#b91c1c", "#0f766e", "#4338ca", "#be185d", "#000000"];
 
-// --- GITHUB API HELPERS ---
-const toBase64 = (str) => window.btoa(unescape(encodeURIComponent(str)));
-const fromBase64 = (str) => decodeURIComponent(escape(window.atob(str)));
-
-const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = error => reject(error);
-  });
-};
-
-const getGitHubFile = async (path) => {
-  try {
-    const url = `https://api.github.com/repos/${githubConfig.username}/${githubConfig.repo}/contents/${path}?ref=${githubConfig.branch}`;
-    const res = await fetch(url, {
-      headers: { 
-        'Authorization': `token ${githubConfig.token}`,
-        'Accept': 'application/vnd.github.v3+json'
-      }
-    });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error('GitHub Fetch Error');
-    const data = await res.json();
-    const content = fromBase64(data.content);
-    return { content: JSON.parse(content), sha: data.sha };
-  } catch (error) {
-    console.error("Get GitHub File Error:", error);
-    return null;
-  }
-};
-
-const saveGitHubFile = async (path, content, message, sha = null) => {
-  const url = `https://api.github.com/repos/${githubConfig.username}/${githubConfig.repo}/contents/${path}`;
-  const body = {
-    message: message,
-    content: toBase64(JSON.stringify(content, null, 2)),
-    branch: githubConfig.branch
-  };
-  if (sha) body.sha = sha;
-
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `token ${githubConfig.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body)
-  });
-  
-  if (!res.ok) {
-    const errData = await res.json();
-    throw new Error(`GitHub Save Error: ${errData.message}`);
-  }
-  return await res.json();
-};
-
-const uploadImageToGitHub = async (file, path) => {
-  const content = await fileToBase64(file);
-  const url = `https://api.github.com/repos/${githubConfig.username}/${githubConfig.repo}/contents/${path}`;
-  
-  const res = await fetch(url, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `token ${githubConfig.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: `Upload image: ${path}`,
-      content: content,
-      branch: githubConfig.branch
-    })
-  });
-
-  if (!res.ok) throw new Error('Image Upload Failed');
-  return `https://cdn.jsdelivr.net/gh/${githubConfig.username}/${githubConfig.repo}@${githubConfig.branch}/${path}`;
+// --- UTILS ---
+const generateEventId = () => {
+  const random4 = Math.floor(1000 + Math.random() * 9000);
+  const random3 = Math.random().toString(36).substring(2, 5).toUpperCase();
+  return `EVT-${random4}-${random3}`;
 };
 
 const compressImage = async (file) => {
@@ -131,8 +79,8 @@ const compressImage = async (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1600; 
-        const MAX_HEIGHT = 1600;
+        const MAX_WIDTH = 1000; 
+        const MAX_HEIGHT = 1000;
         let width = img.width;
         let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }} 
@@ -140,7 +88,9 @@ const compressImage = async (file) => {
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+        // Firestore için sıkıştırma (0.7 kalite)
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(compressedDataUrl);
       };
     };
   });
@@ -156,7 +106,6 @@ const loadScript = (src) => {
 };
 
 // --- UI COMPONENTS ---
-
 const GlassCard = ({ children, className = "", onClick }) => (
   <div onClick={onClick} className={`relative overflow-hidden bg-white/70 dark:bg-slate-900/60 backdrop-blur-xl border border-white/40 dark:border-white/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] rounded-3xl transition-all duration-300 ${className}`}>
     {children}
@@ -192,25 +141,41 @@ export default function EventGlassApp() {
   const [view, setView] = useState('landing'); 
   const [theme, setTheme] = useState('dark');
   const [currentEventId, setCurrentEventId] = useState(null);
+  const [firebaseError, setFirebaseError] = useState(false);
   
   useEffect(() => {
     const init = async () => {
+      // Config Kontrolü
+      if (firebaseConfig.apiKey === "BURAYA_API_KEY_YAZIN") {
+         setFirebaseError(true);
+         document.getElementById('app-loader').style.display = 'none';
+         return;
+      }
+      
+      try {
+        await signInAnonymously(auth);
+      } catch (err) { 
+        console.error("Auth Error:", err); 
+      }
+
       if (!window.JSZip) {
         try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'); } 
         catch (e) { console.warn("JSZip failed."); }
       }
+
       const params = new URLSearchParams(window.location.search);
       const urlEventId = params.get('event');
       if (urlEventId) {
         setCurrentEventId(urlEventId);
         setView('event');
       }
-      // Loading ekranını kaldır
       const loader = document.getElementById('app-loader');
       if (loader) loader.style.display = 'none';
     };
     init();
+    const unsubscribe = auth ? onAuthStateChanged(auth, () => {}) : () => {};
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) setTheme('light');
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
@@ -234,12 +199,12 @@ export default function EventGlassApp() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (githubConfig.token === "BURAYA_TOKEN_YAPISTIR") {
+  if (firebaseError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
         <AlertTriangle size={48} className="text-yellow-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">GitHub Token Eksik</h1>
-        <p className="max-w-md text-slate-400">Lütfen kod içerisindeki <code>githubConfig</code> objesine GitHub Personal Access Token'ınızı yapıştırın.</p>
+        <h1 className="text-2xl font-bold mb-2">Firebase Ayarları Eksik</h1>
+        <p className="max-w-md text-slate-400">Lütfen <code>src/App.jsx</code> dosyasındaki <code>firebaseConfig</code> alanını kendi proje bilgilerinizle doldurun.</p>
       </div>
     );
   }
@@ -283,7 +248,6 @@ export default function EventGlassApp() {
 }
 
 // --- SUB COMPONENTS ---
-
 function LandingPage({ onCreateClick, onJoinClick }) {
   const [joinId, setJoinId] = useState('');
   const handleJoin = (e) => { e.preventDefault(); if (joinId.trim().length > 3) onJoinClick(joinId.trim()); };
@@ -299,7 +263,7 @@ function LandingPage({ onCreateClick, onJoinClick }) {
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 animate-gradient-x">Sonsuzlaştırın</span>
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed font-light">
-          Etkinlikleriniz için yeni nesil, GitHub üzerinde yaşayan güvenli fotoğraf paylaşım platformu.
+          Etkinlikleriniz için yeni nesil, güvenli fotoğraf paylaşım platformu.
         </motion.p>
       </div>
 
@@ -310,7 +274,7 @@ function LandingPage({ onCreateClick, onJoinClick }) {
              <ArrowRight className="text-slate-300 group-hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-all" />
           </div>
           <h3 className="text-2xl font-bold mb-2">Etkinlik Oluştur</h3>
-          <p className="text-slate-500 dark:text-slate-400">Kendi özel alanını yarat, verileri GitHub'da sakla.</p>
+          <p className="text-slate-500 dark:text-slate-400">Kendi özel alanını yarat, anıları topla.</p>
         </GlassCard>
         <GlassCard className="p-8 text-left flex flex-col justify-between">
           <div className="mb-6">
@@ -338,22 +302,21 @@ function CreateEventPage({ onCancel, onCreated }) {
     setLoading(true);
     try {
       const eventId = "EVT-" + Math.floor(1000 + Math.random() * 9000) + "-" + Math.random().toString(36).substring(2, 5).toUpperCase();
-      const eventData = {
+      
+      // FIREBASE'E KAYIT (FIRESTORE)
+      await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'events', eventId), {
         id: eventId,
         title: formData.name,
         description: formData.description,
         coverUrl: formData.cover,
-        createdAt: new Date().toISOString(),
-        creator: currentUser
-      };
-
-      await saveGitHubFile(`data/events/${eventId}/meta.json`, eventData, `Create Event ${eventId}`);
-      await saveGitHubFile(`data/events/${eventId}/photos.json`, [], `Init Photos ${eventId}`);
+        createdAt: serverTimestamp(),
+        creatorId: currentUser
+      });
 
       onCreated(eventId);
     } catch (error) {
       console.error("Error:", error);
-      alert("Oluşturulurken hata oluştu. GitHub Token yetkilerini kontrol et.");
+      alert("Oluşturulurken hata oluştu. Firebase ayarlarını kontrol et.");
     } finally {
       setLoading(false);
     }
@@ -369,7 +332,7 @@ function CreateEventPage({ onCancel, onCreated }) {
         <div className="flex justify-between items-start">
             <h2 className="text-4xl font-bold mb-2">Yeni Etkinlik</h2>
         </div>
-        <p className="text-slate-500 dark:text-slate-400 mb-8">GitHub üzerinde güvenli bir alan oluşturun.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">Güvenli bir anı alanı oluşturun.</p>
         <form onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-6">
             <div>
@@ -452,62 +415,45 @@ function EventDetailPage({ eventId, onInvalidId }) {
       if (idx > 0) setSelectedPhoto(photos[idx - 1]);
   };
 
-  const fetchData = useCallback(async () => {
-    setRefreshing(true);
-    try {
-        const metaFile = await getGitHubFile(`data/events/${eventId}/meta.json`);
-        if (!metaFile) { setError('not_found'); setLoading(false); return; }
-        setEvent(metaFile.content);
-
-        const photosFile = await getGitHubFile(`data/events/${eventId}/photos.json`);
-        if (photosFile) {
-            const sorted = (photosFile.content || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-            setPhotos(sorted);
-        }
-    } catch (err) {
-        console.error("Fetch error", err);
-        setError('error');
-    } finally {
+  // DATA FETCHING
+  useEffect(() => {
+    if (!eventId) return;
+    setLoading(true);
+    const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'events', eventId);
+    getDoc(docRef).then((docSnap) => {
+        if (docSnap.exists()) setEvent(docSnap.data());
+        else setError('not_found');
         setLoading(false);
-        setRefreshing(false);
-    }
+    }).catch(e => { console.error(e); setError('error'); setLoading(false); });
   }, [eventId]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (!eventId) return;
+    const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', `photos_${eventId}`), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setPhotos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [eventId]);
 
   const handleFileUpload = async (files) => {
     setUploading(true);
     try {
-      const newPhotos = [];
-      for (const file of files) {
+      const promises = Array.from(files).map(async (file) => {
           const blob = await compressImage(file);
-          const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-          const path = `data/events/${eventId}/images/${fileName}`;
-          const publicUrl = await uploadImageToGitHub(blob, path);
-          newPhotos.push({
-              id: Math.random().toString(36).substring(2, 9),
-              url: publicUrl,
-              name: file.name,
-              createdAt: new Date().toISOString(),
-              uploader: currentUser
+          // Check Firestore limit (approx 1MB)
+          if (blob.length > 1000000) { console.warn("File too large"); return; }
+          
+          return addDoc(collection(db, 'artifacts', appIdStr, 'public', 'data', `photos_${eventId}`), {
+            url: blob,
+            name: file.name,
+            createdAt: serverTimestamp(),
+            uploaderId: currentUser
           });
-      }
-
-      const photosFile = await getGitHubFile(`data/events/${eventId}/photos.json`);
-      const currentList = photosFile ? photosFile.content : [];
-      const updatedList = [...currentList, ...newPhotos];
-      
-      await saveGitHubFile(
-          `data/events/${eventId}/photos.json`, 
-          updatedList, 
-          `Add ${newPhotos.length} photos`, 
-          photosFile?.sha
-      );
-
-      setPhotos(prev => [...newPhotos, ...prev].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      });
+      await Promise.all(promises);
     } catch (error) {
       console.error("Upload failed", error);
-      alert("Yükleme başarısız. İnternet bağlantınızı kontrol edin.");
     } finally {
       setUploading(false);
     }
@@ -578,20 +524,19 @@ function EventDetailPage({ eventId, onInvalidId }) {
                {event?.description && <p className="text-xl text-white/80 max-w-2xl font-light">{event.description}</p>}
             </div>
             <div className="flex gap-3">
-               <Button variant="glass" icon={RefreshCw} onClick={fetchData} className={`${refreshing ? 'animate-spin' : ''} w-12 px-0`} />
                <Button variant="glass" icon={Share2} onClick={() => setShowShareModal(true)}>Davet Et</Button>
             </div>
           </div>
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
         <GlassCard className="p-0 overflow-hidden border-dashed border-2 border-blue-500/20 hover:border-blue-500/50 transition-all group">
           <label className="flex flex-col items-center justify-center py-16 cursor-pointer relative">
              <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/5 transition-colors" />
              <div className="p-6 rounded-full bg-blue-500/10 text-blue-600 mb-4 group-hover:scale-110 transition-transform">{uploading ? <Loader2 className="animate-spin" size={40} /> : <Upload size={40} />}</div>
              <h3 className="text-2xl font-bold">Fotoğraf Ekle</h3>
-             <p className="text-slate-500 mt-2">GitHub'a kaydetmek için tıklayın.</p>
+             <p className="text-slate-500 mt-2">Anılarınızı buraya sürükleyin.</p>
              <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e.target.files)} disabled={uploading} />
           </label>
         </GlassCard>
