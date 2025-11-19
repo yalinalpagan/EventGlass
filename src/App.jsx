@@ -48,11 +48,12 @@ const logSystem = async (action, eventId = null, extraDetails = {}) => {
     const userAgent = navigator.userAgent;
     
     const logData = {
-      action_type: action,
-      ip_address: ip,
-      user_agent: userAgent,
-      event_id: eventId,
-      details: extraDetails
+        action_type: action,
+        ip_address: ip,
+        user_agent: userAgent,
+        event_id: eventId,
+        details: extraDetails,
+        user_id: currentUser
     };
 
     console.log("LOG:", logData);
