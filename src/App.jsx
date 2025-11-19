@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // --- GITHUB CONFIGURATION ---
 const githubConfig = {
-  token: "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",
+  token: "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",
   username: "yalinalpagan",
   repo: "EventGlassPhotos", 
   branch: "main"
