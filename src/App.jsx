@@ -2,24 +2,25 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Camera, Plus, Upload, Moon, Sun, Share2, X, 
   Image as ImageIcon, ChevronRight, ChevronLeft,
-  Copy, Check, Loader2, Download, Sparkles, Link as LinkIcon,
+  Copy, Check, Loader2, Download, ArrowRight, Sparkles, Link as LinkIcon,
   AlertTriangle, Lock, FileArchive, Smartphone, Palette, RefreshCw, Database,
   Video as VideoIcon, Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createClient } from '@supabase/supabase-js';
+// Supabase Client'ı CDN'den çekiyoruz (npm install gerektirmez)
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // --- SUPABASE AYARLARI ---
-// Buraya kendi proje bilgilerini gir.
+// 👇👇👇 BURAYI KENDİ SUPABASE BİLGİLERİNLE DOLDUR 👇👇👇
 const supabaseUrl = "https://macgaodeesbzxufdhzja.supabase.co"; // Örn: https://xyz.supabase.co
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hY2dhb2RlZXNienh1ZmRoemphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTc3NTksImV4cCI6MjA3OTEzMzc1OX0.RRZcBuO7QrgW3z5PHgjZNPf_vEPaIvjuVW9pzW8w6jE"; // Örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hY2dhb2RlZXNienh1ZmRoemphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTc3NTksImV4cCI6MjA3OTEzMzc1OX0.RRZcBuO7QrgW3z5PHgjZNPf_vEPaIvjuVW9pzW8w6jE"; // Örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... 
+// 👆👆👆👆👆👆
 
 let supabase;
 let configError = false;
 
 try {
-    if (supabaseUrl.includes("BURAYA")) {
+    if (!supabaseUrl || supabaseUrl.includes("BURAYA")) {
         configError = true;
     } else {
         supabase = createClient(supabaseUrl, supabaseKey);
@@ -31,7 +32,6 @@ try {
 
 // --- LOGLAMA VE KİMLİK SİSTEMİ ---
 
-// Kullanıcının IP adresini almak için basit bir servis
 const fetchUserIP = async () => {
     try {
         const res = await fetch('https://api.ipify.org?format=json');
@@ -42,9 +42,8 @@ const fetchUserIP = async () => {
     }
 };
 
-// Detaylı Loglama Fonksiyonu
 const logSystem = async (action, eventId = null, extraDetails = {}) => {
-    if (configError) return;
+    if (configError || !supabase) return;
     
     const ip = await fetchUserIP();
     const userAgent = navigator.userAgent;
@@ -57,13 +56,16 @@ const logSystem = async (action, eventId = null, extraDetails = {}) => {
         details: extraDetails
     };
 
-    console.log("LOG:", logData); // Konsolda da görelim
+    console.log("LOG:", logData);
 
-    // Supabase'e log at
-    await supabase.from('logs').insert(logData);
+    try {
+        await supabase.from('logs').insert(logData);
+    } catch (e) {
+        console.warn("Loglama hatası:", e);
+    }
 };
 
-// --- USER ID (Cihazda Kalıcı Kimlik) ---
+// --- USER ID ---
 const getUserId = () => {
     let uid = localStorage.getItem('eg_uid');
     if(!uid) {
@@ -196,7 +198,7 @@ export default function EventGlassApp() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
         <Database size={48} className="text-red-500 mb-4" />
         <h1 className="text-2xl font-bold mb-2">Sistem Ayarları Eksik</h1>
-        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki bağlantı anahtarlarını doldurun.</p>
+        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki <code>supabaseUrl</code> ve <code>supabaseKey</code> alanlarını doldurun.</p>
       </div>
     );
   }
@@ -334,7 +336,7 @@ function CreateEventPage({ onCancel, onCreated }) {
         <div className="flex justify-between items-start">
             <h2 className="text-4xl font-bold mb-2">Yeni Etkinlik</h2>
         </div>
-        <p className="text-slate-500 dark:text-slate-400 mb-8">Bulut tabanlı anı alanı oluşturun.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">Güvenli Bulut Alanı Oluşturun.</p>
         <form onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-6">
             <div>
@@ -478,7 +480,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
              event_id: eventId,
              url: publicUrl,
              name: file.name,
-             type: isVideo ? 'video' : 'image',
+             type: isVideo ? 'video' : 'image', // Yeni tip alanı
              uploader_id: currentUser
           });
           if(dbError) throw dbError;
@@ -498,7 +500,6 @@ function EventDetailPage({ eventId, onInvalidId }) {
   const handleDownloadSingle = async (e, media) => {
     e.stopPropagation(); e.preventDefault();
     await logSystem('DOWNLOAD_SINGLE', eventId, { mediaId: media.id });
-    // ... (Mevcut indirme mantığı)
     const link = document.createElement('a');
     link.href = media.url;
     link.download = `eventglass-${media.id}.${media.name?.split('.').pop() || 'jpg'}`;
@@ -545,7 +546,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
 
   return (
     <div className="space-y-8 pb-20 relative mt-4">
-      {/* ... HERO SECTION (AYNI KALDI) ... */}
+      {/* ... HERO SECTION ... */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="relative h-[45vh] rounded-[2.5rem] overflow-hidden shadow-2xl group" style={isColor ? { backgroundColor: event.coverUrl } : {}}>
         {isImage && <img src={event?.coverUrl} alt="Cover" className="absolute inset-0 w-full h-full object-cover transition-transform duration-[10s] ease-out group-hover:scale-105" />}
         {isGradient && <div className={`absolute inset-0 w-full h-full ${gradientClass}`} />}
@@ -579,6 +580,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
              </div>
              <h3 className="text-2xl font-bold">Medya Ekle</h3>
              <p className="text-slate-500 mt-2">Fotoğraf veya Video yüklemek için tıklayın.</p>
+             {/* Video desteği eklendi */}
              <input type="file" multiple accept="image/*,video/*" className="hidden" onChange={(e) => handleFileUpload(e.target.files)} disabled={uploading} />
           </label>
         </GlassCard>
@@ -615,7 +617,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
         )}
       </div>
 
-      {/* SHARE MODAL (LOG EKLENDİ) */}
+      {/* SHARE MODAL */}
       <AnimatePresence>
         {showShareModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] w-screen h-screen bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowShareModal(false)}>
