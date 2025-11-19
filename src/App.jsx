@@ -3,48 +3,41 @@ import {
   Camera, Plus, Upload, Moon, Sun, Share2, X, 
   Image as ImageIcon, ChevronRight, ChevronLeft,
   Copy, Check, Loader2, Download, ArrowRight, Sparkles, Link as LinkIcon,
-  AlertTriangle, Lock, FileArchive, Smartphone, Palette, RefreshCw
+  AlertTriangle, Lock, FileArchive, Smartphone, Palette, RefreshCw, Database
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { createClient } from '@supabase/supabase-js';
 
-// --- FIREBASE SETUP ---
-import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, orderBy, serverTimestamp, getDoc } from "firebase/firestore";
+// --- SUPABASE CONFIGURATION ---
+// 👇👇👇 BURAYI KENDİ SUPABASE BİLGİLERİNLE DOLDUR 👇👇👇
+const supabaseUrl = "https://macgaodeesbzxufdhzja.supabase.co"; // Örn: https://xyz.supabase.co
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hY2dhb2RlZXNienh1ZmRoemphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTc3NTksImV4cCI6MjA3OTEzMzc1OX0.RRZcBuO7QrgW3z5PHgjZNPf_vEPaIvjuVW9pzW8w6jE"; // Örn: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+// 👆👆👆👆👆👆
 
-// ⚠️ BURAYI DOLDURMAYI UNUTMA!
-// Firebase Konsolu -> Project Settings -> General -> Your apps kısmından alabilirsin.
-// Bu anahtarlar halka açık çalışır, GitHub iptal etmez.
-const firebaseConfig = {
-  apiKey: "AIzaSyDpWlwebcwGt2_wD7BEX2m6xyMTZ2_x46w",
-  authDomain: "yalin-eventglass.firebaseapp.com",
-  projectId: "yalin-eventglass",
-  storageBucket: "yalin-eventglass.firebasestorage.app",
-  messagingSenderId: "543450127696",
-  appId: "1:543450127696:web:0d343dd09036613fdbe055"
-};
+let supabase;
+let configError = false;
 
-// Firebase Başlatma
-let app, auth, db;
 try {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (error) {
-  console.error("Firebase başlatılamadı:", error);
+    if (supabaseUrl.includes("BURAYA")) {
+        configError = true;
+    } else {
+        supabase = createClient(supabaseUrl, supabaseKey);
+    }
+} catch (e) {
+    console.error("Supabase init error", e);
+    configError = true;
 }
 
-// --- APP ID ---
-const appIdStr = 'event-glass-production'; 
-const generateUserId = () => {
-  let uid = localStorage.getItem('eventglass_uid');
-  if (!uid) {
-    uid = 'user_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('eventglass_uid', uid);
-  }
-  return uid;
+// --- USER ID ---
+const getUserId = () => {
+    let uid = localStorage.getItem('eg_uid');
+    if(!uid) {
+        uid = 'user_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('eg_uid', uid);
+    }
+    return uid;
 };
-const currentUser = generateUserId();
+const currentUser = getUserId();
 
 // --- ASSETS ---
 const IMAGE_OPTIONS = [
@@ -62,48 +55,6 @@ const GRADIENT_OPTIONS = [
 ];
 
 const SOLID_COLORS = ["#1e293b", "#b91c1c", "#0f766e", "#4338ca", "#be185d", "#000000"];
-
-// --- UTILS ---
-const generateEventId = () => {
-  const random4 = Math.floor(1000 + Math.random() * 9000);
-  const random3 = Math.random().toString(36).substring(2, 5).toUpperCase();
-  return `EVT-${random4}-${random3}`;
-};
-
-const compressImage = async (file) => {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target.result;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1000; 
-        const MAX_HEIGHT = 1000;
-        let width = img.width;
-        let height = img.height;
-        if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }} 
-        else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }}
-        canvas.width = width; canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        // Firestore için sıkıştırma (0.7 kalite)
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        resolve(compressedDataUrl);
-      };
-    };
-  });
-};
-
-const loadScript = (src) => {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = src; script.onload = resolve; script.onerror = reject;
-    document.head.appendChild(script);
-  });
-};
 
 // --- UI COMPONENTS ---
 const GlassCard = ({ children, className = "", onClick }) => (
@@ -141,41 +92,27 @@ export default function EventGlassApp() {
   const [view, setView] = useState('landing'); 
   const [theme, setTheme] = useState('dark');
   const [currentEventId, setCurrentEventId] = useState(null);
-  const [firebaseError, setFirebaseError] = useState(false);
   
   useEffect(() => {
     const init = async () => {
-      // Config Kontrolü
-      if (firebaseConfig.apiKey === "BURAYA_API_KEY_YAZIN") {
-         setFirebaseError(true);
-         document.getElementById('app-loader').style.display = 'none';
-         return;
+      if (!window.JSZip) {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        document.head.appendChild(script);
       }
       
-      try {
-        await signInAnonymously(auth);
-      } catch (err) { 
-        console.error("Auth Error:", err); 
-      }
-
-      if (!window.JSZip) {
-        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'); } 
-        catch (e) { console.warn("JSZip failed."); }
-      }
-
       const params = new URLSearchParams(window.location.search);
       const urlEventId = params.get('event');
       if (urlEventId) {
         setCurrentEventId(urlEventId);
         setView('event');
       }
+      
       const loader = document.getElementById('app-loader');
       if (loader) loader.style.display = 'none';
     };
     init();
-    const unsubscribe = auth ? onAuthStateChanged(auth, () => {}) : () => {};
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) setTheme('light');
-    return () => unsubscribe();
   }, []);
 
   useEffect(() => { document.documentElement.classList.toggle('dark', theme === 'dark'); }, [theme]);
@@ -199,12 +136,13 @@ export default function EventGlassApp() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (firebaseError) {
+  if (configError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center bg-slate-900 text-white">
-        <AlertTriangle size={48} className="text-yellow-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Firebase Ayarları Eksik</h1>
-        <p className="max-w-md text-slate-400">Lütfen <code>src/App.jsx</code> dosyasındaki <code>firebaseConfig</code> alanını kendi proje bilgilerinizle doldurun.</p>
+        <Database size={48} className="text-red-500 mb-4" />
+        <h1 className="text-2xl font-bold mb-2">Supabase Ayarları Eksik</h1>
+        <p className="max-w-md text-slate-400 mb-4">Lütfen <code>src/App.jsx</code> dosyasındaki <code>supabaseUrl</code> ve <code>supabaseKey</code> alanlarını doldurun.</p>
+        <p className="text-xs text-slate-600">Projenizdeki SQL Tablolarını oluşturduğunuzdan emin olun.</p>
       </div>
     );
   }
@@ -248,6 +186,7 @@ export default function EventGlassApp() {
 }
 
 // --- SUB COMPONENTS ---
+
 function LandingPage({ onCreateClick, onJoinClick }) {
   const [joinId, setJoinId] = useState('');
   const handleJoin = (e) => { e.preventDefault(); if (joinId.trim().length > 3) onJoinClick(joinId.trim()); };
@@ -263,7 +202,7 @@ function LandingPage({ onCreateClick, onJoinClick }) {
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-500 to-pink-500 animate-gradient-x">Sonsuzlaştırın</span>
         </motion.h1>
         <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="text-xl md:text-2xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed font-light">
-          Etkinlikleriniz için yeni nesil, güvenli fotoğraf paylaşım platformu.
+          Etkinlikleriniz için Supabase destekli, yeni nesil fotoğraf paylaşım platformu.
         </motion.p>
       </div>
 
@@ -303,20 +242,20 @@ function CreateEventPage({ onCancel, onCreated }) {
     try {
       const eventId = "EVT-" + Math.floor(1000 + Math.random() * 9000) + "-" + Math.random().toString(36).substring(2, 5).toUpperCase();
       
-      // FIREBASE'E KAYIT (FIRESTORE)
-      await setDoc(doc(db, 'artifacts', appIdStr, 'public', 'data', 'events', eventId), {
+      const { error } = await supabase.from('events').insert({
         id: eventId,
         title: formData.name,
         description: formData.description,
-        coverUrl: formData.cover,
-        createdAt: serverTimestamp(),
-        creatorId: currentUser
+        cover_url: formData.cover,
+        creator_id: currentUser
       });
+
+      if (error) throw error;
 
       onCreated(eventId);
     } catch (error) {
       console.error("Error:", error);
-      alert("Oluşturulurken hata oluştu. Firebase ayarlarını kontrol et.");
+      alert("Oluşturulurken hata oluştu: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -332,7 +271,7 @@ function CreateEventPage({ onCancel, onCreated }) {
         <div className="flex justify-between items-start">
             <h2 className="text-4xl font-bold mb-2">Yeni Etkinlik</h2>
         </div>
-        <p className="text-slate-500 dark:text-slate-400 mb-8">Güvenli bir anı alanı oluşturun.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-8">Supabase veritabanı üzerinde alan oluşturun.</p>
         <form onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-6">
             <div>
@@ -390,7 +329,6 @@ function EventDetailPage({ eventId, onInvalidId }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   
   const currentIndex = selectedPhoto ? photos.findIndex(p => p.id === selectedPhoto.id) : -1;
   const shareUrl = `${window.location.origin}${window.location.pathname}?event=${eventId}`;
@@ -415,45 +353,71 @@ function EventDetailPage({ eventId, onInvalidId }) {
       if (idx > 0) setSelectedPhoto(photos[idx - 1]);
   };
 
-  // DATA FETCHING
+  // FETCH DATA (Supabase)
   useEffect(() => {
     if (!eventId) return;
     setLoading(true);
-    const docRef = doc(db, 'artifacts', appIdStr, 'public', 'data', 'events', eventId);
-    getDoc(docRef).then((docSnap) => {
-        if (docSnap.exists()) setEvent(docSnap.data());
-        else setError('not_found');
+    const fetchEvent = async () => {
+        const { data, error } = await supabase.from('events').select('*').eq('id', eventId).single();
+        if (error || !data) {
+            setError('not_found');
+        } else {
+            setEvent({ ...data, coverUrl: data.cover_url });
+        }
         setLoading(false);
-    }).catch(e => { console.error(e); setError('error'); setLoading(false); });
+    };
+    fetchEvent();
   }, [eventId]);
 
+  // REALTIME SUBSCRIPTION
   useEffect(() => {
     if (!eventId) return;
-    const q = query(collection(db, 'artifacts', appIdStr, 'public', 'data', `photos_${eventId}`), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setPhotos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
+    
+    // Initial Fetch
+    supabase.from('photos').select('*').eq('event_id', eventId).order('created_at', { ascending: false })
+      .then(({ data }) => {
+          if (data) setPhotos(data);
+      });
+
+    // Subscribe
+    const subscription = supabase
+      .channel('public:photos')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'photos', filter: `event_id=eq.${eventId}` }, (payload) => {
+        setPhotos(prev => [payload.new, ...prev]);
+      })
+      .subscribe();
+
+    return () => {
+        supabase.removeChannel(subscription);
+    };
   }, [eventId]);
 
   const handleFileUpload = async (files) => {
     setUploading(true);
     try {
       const promises = Array.from(files).map(async (file) => {
-          const blob = await compressImage(file);
-          // Check Firestore limit (approx 1MB)
-          if (blob.length > 1000000) { console.warn("File too large"); return; }
+          const fileName = `${eventId}/${Date.now()}_${Math.random().toString(36).substring(7)}`;
           
-          return addDoc(collection(db, 'artifacts', appIdStr, 'public', 'data', `photos_${eventId}`), {
-            url: blob,
-            name: file.name,
-            createdAt: serverTimestamp(),
-            uploaderId: currentUser
+          // Upload to Supabase Storage
+          const { data: uploadData, error: uploadError } = await supabase.storage.from('event-photos').upload(fileName, file);
+          if (uploadError) throw uploadError;
+
+          // Get Public URL
+          const { data: { publicUrl } } = supabase.storage.from('event-photos').getPublicUrl(fileName);
+
+          // Insert Row
+          const { error: dbError } = await supabase.from('photos').insert({
+             event_id: eventId,
+             url: publicUrl,
+             name: file.name,
+             uploader_id: currentUser
           });
+          if(dbError) throw dbError;
       });
       await Promise.all(promises);
     } catch (error) {
       console.error("Upload failed", error);
+      alert("Yükleme sırasında hata oluştu: " + error.message);
     } finally {
       setUploading(false);
     }
@@ -536,7 +500,7 @@ function EventDetailPage({ eventId, onInvalidId }) {
              <div className="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/5 transition-colors" />
              <div className="p-6 rounded-full bg-blue-500/10 text-blue-600 mb-4 group-hover:scale-110 transition-transform">{uploading ? <Loader2 className="animate-spin" size={40} /> : <Upload size={40} />}</div>
              <h3 className="text-2xl font-bold">Fotoğraf Ekle</h3>
-             <p className="text-slate-500 mt-2">Anılarınızı buraya sürükleyin.</p>
+             <p className="text-slate-500 mt-2">Supabase Storage'a kaydetmek için tıklayın.</p>
              <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => handleFileUpload(e.target.files)} disabled={uploading} />
           </label>
         </GlassCard>
